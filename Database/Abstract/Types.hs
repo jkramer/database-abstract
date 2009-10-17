@@ -15,9 +15,13 @@ module Database.Abstract.Types where
     data SQL =
         Literal String
         | NULL
+        | TRUE
+        | FALSE
         | Column ColumnName
         | Table TableName
         | QualifiedColumn TableName ColumnName
+        | Everything
+        | QualifiedEverything TableName
         | Function String [SQL]
         | Select [SQL] SQL Criterion
         deriving (Eq)

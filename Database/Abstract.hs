@@ -1,10 +1,15 @@
 
 module Database.Abstract (
-        whereSQL,
         selectSQL,
+        insertSQL,
+        updateSQL,
+
+        whereSQL,
+        quoteSQL,
 
         module Database.Abstract.Types
     ) where
+
 
     import Database.Abstract.Types
 
@@ -72,21 +77,46 @@ module Database.Abstract (
             criteria -> Just $ "(" ++ intercalate s criteria ++ ")"
 
 
+    valueListSQL style values =
+        if values == []
+            then quoteSQL style Everything
+            else intercalate ", " (map (quoteSQL style) values)
+
+
+    -- | Generate a SELECT statement.
     -- Joins? Groups? Limits? Orders? Havings? ...
     selectSQL :: QuoteStyle -> [SQL] -> SQL -> Criterion -> String
     selectSQL style values source criterion =
-        maybe select (\ s -> select ++ " WHERE " ++ s) (whereSQL style criterion)
+        maybe select ((select ++ " WHERE ") ++) (whereSQL style criterion)
         where
             select =
-                "SELECT "
+                "SELECT " ++ intercalate ", " (map (quoteSQL style) values)
                 ++
-                intercalate ", " (map (quoteSQL style) values)
-                ++
-                " FROM "
-                ++
-                quoteSQL style source
+                " FROM " ++ quoteSQL style source
 
 
+    -- | Generate an INSERT statement.
+    insertSQL :: QuoteStyle -> TableName -> [(ColumnName, SQL)] -> String
+    insertSQL style table values =
+        "INSERT INTO " ++ quoteName style table
+        ++
+        " (" ++ intercalate ", " (map (quoteName style . fst) values) ++ ") "
+        ++
+        "VALUES (" ++ valueListSQL style (map (snd) values) ++ ")"
+
+
+    -- | Generate an UPDATE statement.
+    updateSQL :: QuoteStyle -> TableName -> [(ColumnName, SQL)] -> Maybe Criterion -> String
+    updateSQL style table values criterion =
+        "UPDATE " ++ quoteName style table
+        ++
+        " SET " ++ intercalate ", " (map (update) values)
+        ++
+        case criterion of
+            Nothing -> ""
+            Just criterion -> maybe "" ((++) " WHERE ") (whereSQL style criterion)
+        where
+            update (column, value) = quoteName style column ++ " = " ++ quoteSQL style value
 
 
     quoteLiteral MySQLStyle literal =
@@ -120,9 +150,17 @@ module Database.Abstract (
     quoteSQL style (Function name p) =
         (map toUpper name) ++ "(" ++ intercalate ", " (map (quoteSQL style) p) ++ ")"
 
-    quoteSQL style NULL = "NULL"
-
     quoteSQL style (Table name) = quoteName style name
 
     quoteSQL style (Select values source criterion) =
         "(" ++ selectSQL style values source criterion ++ ")"
+
+    quoteSQL _ TRUE = "TRUE"
+
+    quoteSQL _ FALSE = "FALSE"
+
+    quoteSQL _ NULL = "NULL"
+
+    quoteSQL _ Everything = "*"
+
+    quoteSQL style (QualifiedEverything table) = quoteName style table ++ ".*"
