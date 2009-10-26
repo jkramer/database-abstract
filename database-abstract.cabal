@@ -1,0 +1,13 @@
+Name: database-abstract
+Version: 1.0
+Description: Abstract interface for creating SQL.
+License: GPL
+License-file: LICENSE
+Author: Jonas Kramer
+Maintainer: jkramer@nex.scrapping.cc
+Build-Type: Simple
+Cabal-Version: >=1.2
+Library
+    Build-Depends: base, containers
+    Exposed-modules:
+        Database.Abstract, Database.Abstract.Types
