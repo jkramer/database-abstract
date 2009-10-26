@@ -11,33 +11,52 @@ module Database.Abstract.Types where
     type ColumnName = String
 
 
-    -- SELECTs are selectable values too...
     data SQL =
-        Literal String
-        | NULL
-        | TRUE
-        | FALSE
+        NULL | TRUE | FALSE
+
+        | Literal String
+
+        | Everything
         | Column ColumnName
         | Table TableName
+
         | QualifiedColumn TableName ColumnName
-        | Everything
         | QualifiedEverything TableName
+
         | Function String [SQL]
-        | Select [SQL] SQL Criterion
+        | Select (NEL SQL) (NEL SQL) Criterion
         deriving (Eq)
 
 
     data Criterion =
-        RawSQL String
+        NoWHERE
+        | RawSQL String
         | Compare Comparator SQL SQL
         | Not Criterion
         | IsNull SQL
-        | In SQL [SQL]
-        | And [Criterion]
-        | Or [Criterion]
+        | In SQL (NEL SQL)
+        | And (NEL Criterion)
+        | Or (NEL Criterion)
         deriving (Eq)
 
 
     data Comparator =
         Equal | Less | Greater | LessEqual | GreaterEqual | Like
         deriving (Eq)
+
+
+    -- Type for non-empty lists.
+    data NEL a = NEL (a, [a]) deriving (Eq)
+
+    -- | Get the content of a 'NEL' as list.
+    fromNEL :: NEL a -> [a]
+    fromNEL (NEL (x, xs)) = x : xs
+
+    -- | Create a non-empty list with one single element.
+    singleNEL :: a -> NEL a
+    singleNEL a = NEL (a, [])
+
+
+    -- | Create a non-empty list from a list. Will crash if the list is empty.
+    toNEL :: [a] -> NEL a
+    toNEL s = NEL (head s, tail s)

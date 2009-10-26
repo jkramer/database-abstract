@@ -28,6 +28,11 @@ module Database.Abstract (
 
     whereSQL :: QuoteStyle -> Criterion -> Maybe String
 
+
+    -- No WHERE statement.
+    whereSQL _ NoWHERE = Nothing
+
+
     -- Insert a string as-is in the query.
     whereSQL _ (RawSQL sql) = Just sql
 
@@ -49,11 +54,9 @@ module Database.Abstract (
 
     -- IN (...).
     whereSQL style (In left values) =
-        if values == []
-            then Nothing
-            else Just $ quoteSQL style left ++ " IN (" ++ list ++ ")"
+        Just $ quoteSQL style left ++ " IN (" ++ list ++ ")"
         where
-            list = intercalate ", " (map (quoteSQL style) values)
+            list = intercalate ", " (map (quoteSQL style) (fromNEL values))
 
 
     -- Negate a criterion.
@@ -72,7 +75,7 @@ module Database.Abstract (
 
 
     combineCriteria style s criteria =
-        case (mapMaybe (whereSQL style) criteria) of
+        case (mapMaybe (whereSQL style) $ fromNEL criteria) of
             [] -> Nothing
             criteria -> Just $ "(" ++ intercalate s criteria ++ ")"
 
@@ -83,34 +86,35 @@ module Database.Abstract (
             else intercalate ", " (map (quoteSQL style) values)
 
 
-    -- | Generate a SELECT statement.
+    -- | Generate a SELECT statement. If the list of values to select is empty,
+    -- everything ("*") is selected.
     -- Joins? Groups? Limits? Orders? Havings? ...
-    selectSQL :: QuoteStyle -> [SQL] -> SQL -> Criterion -> String
+    selectSQL :: QuoteStyle -> NEL SQL -> NEL SQL -> Criterion -> String
     selectSQL style values source criterion =
         maybe select ((select ++ " WHERE ") ++) (whereSQL style criterion)
         where
             select =
-                "SELECT " ++ intercalate ", " (map (quoteSQL style) values)
+                "SELECT " ++ intercalate ", " (map (quoteSQL style) (fromNEL values))
                 ++
-                " FROM " ++ quoteSQL style source
+                " FROM " ++ valueListSQL style (fromNEL source)
 
 
     -- | Generate an INSERT statement.
-    insertSQL :: QuoteStyle -> TableName -> [(ColumnName, SQL)] -> String
+    insertSQL :: QuoteStyle -> TableName -> NEL (ColumnName, SQL) -> String
     insertSQL style table values =
         "INSERT INTO " ++ quoteName style table
         ++
-        " (" ++ intercalate ", " (map (quoteName style . fst) values) ++ ") "
+        " (" ++ intercalate ", " (map (quoteName style . fst) (fromNEL values)) ++ ") "
         ++
-        "VALUES (" ++ valueListSQL style (map (snd) values) ++ ")"
+        "VALUES (" ++ valueListSQL style (map snd (fromNEL values)) ++ ")"
 
 
     -- | Generate an UPDATE statement.
-    updateSQL :: QuoteStyle -> TableName -> [(ColumnName, SQL)] -> Maybe Criterion -> String
+    updateSQL :: QuoteStyle -> TableName -> NEL (ColumnName, SQL) -> Maybe Criterion -> String
     updateSQL style table values criterion =
         "UPDATE " ++ quoteName style table
         ++
-        " SET " ++ intercalate ", " (map (update) values)
+        " SET " ++ intercalate ", " (map update (fromNEL values))
         ++
         case criterion of
             Nothing -> ""
@@ -120,7 +124,7 @@ module Database.Abstract (
 
 
     quoteLiteral MySQLStyle literal =
-        "'" ++ (concatMap translate literal) ++ "'"
+        "'" ++ concatMap translate literal ++ "'"
         where
             translate '\'' = "\\'"
             translate '\\' = "\\\\"
@@ -128,7 +132,7 @@ module Database.Abstract (
 
 
     quoteLiteral _ literal =
-        "'" ++ (concatMap translate literal) ++ "'"
+        "'" ++ concatMap translate literal ++ "'"
         where
             translate '\'' = "''"
             translate ch = [ch]
@@ -138,6 +142,7 @@ module Database.Abstract (
     quoteName _ name = "\"" ++ name ++ "\""
 
 
+    -- | Expand an 'SQL' value to a string that can be used in a SQL statement.
     quoteSQL :: QuoteStyle -> SQL -> String
 
     quoteSQL style (Literal literal) = quoteLiteral style literal
@@ -148,7 +153,7 @@ module Database.Abstract (
         quoteName style table ++ "." ++ quoteName style column
 
     quoteSQL style (Function name p) =
-        (map toUpper name) ++ "(" ++ intercalate ", " (map (quoteSQL style) p) ++ ")"
+        map toUpper name ++ "(" ++ intercalate ", " (map (quoteSQL style) p) ++ ")"
 
     quoteSQL style (Table name) = quoteName style name
 
